@@ -15,57 +15,20 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RSS FEEDS ONLY
-// Reddit removed — Railway's server IP is blocked by Reddit (HTTP 403).
-// DealNews category/clearance URLs removed — they return 404.
-// All feeds below are confirmed working.
-// ─────────────────────────────────────────────────────────────────────────────
+// Only feeds that have been confirmed working — everything else removed
 const RSS_FEEDS = [
-
-  // ── General deal aggregators ──────────────────────────────────────────────
-  { url: "https://www.dealnews.com/all.rss",
-    source: "dealnews",     label: "DealNews"            },
-
-  { url: "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1",
-    source: "slickdeals",   label: "Slickdeals"          },
-
-  { url: "https://bensbargains.net/rss.xml/0",
-    source: "bensbargains", label: "Ben's Bargains"      },
-
-  { url: "https://www.spoofee.com/rss.php",
-    source: "spoofee",      label: "Spoofee"             },
-
-  // ── Amazon price drops ────────────────────────────────────────────────────
-  { url: "https://camelcamelcamel.com/top_drops/feed",
-    source: "amazon",       label: "CamelCamelCamel Drops"   },
-
-  { url: "https://camelcamelcamel.com/popular/feed",
-    source: "amazon",       label: "CamelCamelCamel Popular" },
-
-  // ── Human-curated deal blogs ──────────────────────────────────────────────
-  { url: "https://hip2save.com/feed/",
-    source: "hip2save",     label: "Hip2Save"            },
-
-  { url: "https://thekrazycouponlady.com/feed/",
-    source: "couponlady",   label: "Krazy Coupon Lady"   },
-
-  { url: "https://www.bradsdeals.com/feed",
-    source: "bradsdeals",   label: "Brad's Deals"        },
-
-  { url: "https://freebieshark.com/feed/",
-    source: "freebieshark", label: "Freebie Shark"       },
-
-  { url: "https://www.gottadeal.com/feed",
-    source: "gottadeal",    label: "Gotta Deal"          },
-
-  { url: "https://www.retailmenot.com/blog/feed/",
-    source: "retailmenot",  label: "RetailMeNot"         },
+  { url: "https://www.dealnews.com/all.rss",                                                          source: "dealnews",     label: "DealNews"          },
+  { url: "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1", source: "slickdeals",   label: "Slickdeals"        },
+  { url: "https://bensbargains.net/rss.xml/0",                                                        source: "bensbargains", label: "Ben's Bargains"    },
+  { url: "https://www.spoofee.com/rss.php",                                                           source: "spoofee",      label: "Spoofee"           },
+  { url: "https://camelcamelcamel.com/top_drops/feed",                                               source: "amazon",       label: "CamelCamelCamel"   },
+  { url: "https://camelcamelcamel.com/popular/feed",                                                 source: "amazon",       label: "CamelCamelCamel Popular" },
+  { url: "https://hip2save.com/feed/",                                                               source: "hip2save",     label: "Hip2Save"          },
+  { url: "https://thekrazycouponlady.com/feed/",                                                     source: "couponlady",   label: "Krazy Coupon Lady" },
+  { url: "https://www.bradsdeals.com/feed",                                                          source: "bradsdeals",   label: "Brad's Deals"      },
+  { url: "https://freebieshark.com/feed/",                                                           source: "freebieshark", label: "Freebie Shark"     },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STORE DETECTION
-// ─────────────────────────────────────────────────────────────────────────────
 function detectStore(title = "", url = "") {
   const t = (title + " " + url).toLowerCase();
   if (t.includes("home depot") || t.includes("homedepot")) return "Home Depot";
@@ -88,31 +51,19 @@ function detectStore(title = "", url = "") {
   if (t.includes("newegg"))                                return "Newegg";
   if (t.includes("dollar tree"))                           return "Dollar Tree";
   if (t.includes("aldi"))                                  return "Aldi";
-  if (t.includes("kroger"))                                return "Kroger";
   if (t.includes("nike"))                                  return "Nike";
-  if (t.includes("adidas"))                                return "Adidas";
   return "Other";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CATEGORY DETECTION
-// ─────────────────────────────────────────────────────────────────────────────
 function detectCategory(title = "") {
   const t = title.toLowerCase();
-  if (/home depot|menard|lowe'?s|lowes|tool|drill|lumber|hardware|garden|appliance|plumbing|flooring|power saw|leaf blower/.test(t))
-    return "home";
-  if (/old navy|\bgap\b|kohl'?s|shirt|pants|jeans|jacket|hoodie|dress|shoes|sneaker|apparel|clothing|fashion|shorts|sweater/.test(t))
-    return "clothing";
-  if (/chick.fil|starbucks|mcdonald|dunkin|subway|domino|pizza|coffee|burger|fast.?food|free (sandwich|drink|meal|coffee)/.test(t))
-    return "food";
-  if (/amazon|best buy|laptop|phone|\btv\b|monitor|headphone|tablet|ipad|iphone|samsung|gpu|console|gaming|airpod|router/.test(t))
-    return "electronics";
+  if (/home depot|menard|lowe'?s|lowes|tool|drill|lumber|hardware|garden|appliance|plumbing|flooring/.test(t)) return "home";
+  if (/old navy|\bgap\b|kohl'?s|shirt|pants|jeans|jacket|hoodie|dress|shoes|sneaker|apparel|clothing|fashion/.test(t)) return "clothing";
+  if (/chick.fil|starbucks|mcdonald|dunkin|subway|domino|pizza|coffee|burger|fast.?food|free (sandwich|drink|meal)/.test(t)) return "food";
+  if (/amazon|best buy|laptop|phone|\btv\b|monitor|headphone|tablet|ipad|iphone|samsung|gpu|console|gaming/.test(t)) return "electronics";
   return "general";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PRICE & DISCOUNT EXTRACTION
-// ─────────────────────────────────────────────────────────────────────────────
 function extractPrice(title = "") {
   const isFree   = /\bfree\b/i.test(title);
   const prices   = title.replace(/,/g, "").match(/\$[\d]+(?:\.\d{2})?/g);
@@ -123,9 +74,6 @@ function extractPrice(title = "") {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// IMAGE EXTRACTION
-// ─────────────────────────────────────────────────────────────────────────────
 function extractImage(item) {
   if (item.enclosure?.url?.match(/\.(jpg|jpeg|png|webp|gif)/i)) return item.enclosure.url;
   if (item["media:content"]?.["$"]?.url) return item["media:content"]["$"].url;
@@ -133,9 +81,6 @@ function extractImage(item) {
   return m ? m[1] : null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SAVE TO SUPABASE — deduplicates by URL
-// ─────────────────────────────────────────────────────────────────────────────
 async function saveDeal(deal) {
   if (!deal.url || !deal.title || deal.title.length < 5) return false;
 
@@ -147,13 +92,13 @@ async function saveDeal(deal) {
     title:       deal.title.slice(0, 250),
     description: (deal.description || "").slice(0, 600),
     url:         deal.url,
-    image_url:   deal.image_url || null,
+    image_url:   deal.image_url   || null,
     source:      deal.source,
     category:    deal.category,
     store:       deal.store,
-    price:       deal.price  || null,
-    discount:    deal.discount || null,
-    posted_at:   deal.posted_at || new Date().toISOString(),
+    price:       deal.price       || null,
+    discount:    deal.discount    || null,
+    posted_at:   deal.posted_at   || new Date().toISOString(),
     is_approved: true,
   });
 
@@ -161,17 +106,14 @@ async function saveDeal(deal) {
   return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN FETCH LOOP
-// ─────────────────────────────────────────────────────────────────────────────
 async function fetchAndSave() {
-  console.log(`\n[${new Date().toISOString()}] ── Starting fetch ──`);
-  let totalSaved = 0;
+  console.log(`\n[${new Date().toISOString()}] Starting fetch...`);
+  let total = 0;
 
   for (const feed of RSS_FEEDS) {
     try {
       const result = await parser.parseURL(feed.url);
-      let newCount = 0;
+      let saved = 0;
 
       for (const item of result.items.slice(0, 25)) {
         const title = (item.title || "").trim();
@@ -186,22 +128,18 @@ async function fetchAndSave() {
           category:    detectCategory(title),
           store:       detectStore(title, url),
           price, discount,
-          posted_at:   item.pubDate
-            ? new Date(item.pubDate).toISOString()
-            : new Date().toISOString(),
+          posted_at: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
         });
-        if (ok) { totalSaved++; newCount++; }
+        if (ok) { total++; saved++; }
       }
-
-      console.log(`  ✓ ${feed.label}: ${result.items.length} fetched, ${newCount} new`);
+      console.log(`  ✓ ${feed.label}: ${result.items.length} fetched, ${saved} new`);
     } catch (err) {
       console.error(`  ✗ ${feed.label}: ${err.message}`);
     }
   }
 
-  console.log(`\n  ✅ Done — ${totalSaved} new deals saved\n`);
+  console.log(`  ✅ Done — ${total} new deals saved\n`);
 }
 
-// Run immediately on start, then every hour
 fetchAndSave();
 cron.schedule("0 * * * *", fetchAndSave);
