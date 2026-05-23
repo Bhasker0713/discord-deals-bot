@@ -10,9 +10,8 @@ const parser = new Parser({
   timeout: 15000,
   customFields: {
     item: [
-      ["media:content", "media:content", { keepArray: false }],
+      ["media:content",   "media:content",   { keepArray: false }],
       ["media:thumbnail", "media:thumbnail", { keepArray: false }],
-      ["enclosure", "enclosure", { keepArray: false }],
     ],
   },
 });
@@ -35,76 +34,55 @@ const RSS_FEEDS = [
   { url: "https://freebieshark.com/feed/",                                                           source: "freebieshark", label: "Freebie Shark"     },
 ];
 
-// Words that mean we should skip this deal entirely
-const SKIP_KEYWORDS = [
-  "book", "kindle", "audible", "novel", "paperback", "hardcover",
-  "ebook", "audiobook", "manga", "comic book", "textbook",
+// Domains we consider "direct" — no redirect needed
+const DIRECT_DOMAINS = [
+  "amazon.com","walmart.com","target.com","homedepot.com","lowes.com",
+  "bestbuy.com","kohls.com","gap.com","oldnavy.com","macys.com",
+  "costco.com","ebay.com","newegg.com","menards.com","chickfila.com",
+  "starbucks.com","mcdonalds.com","aldi.us","nike.com","adidas.com",
 ];
 
-function shouldSkip(title = "") {
-  const t = title.toLowerCase();
-  return SKIP_KEYWORDS.some(k => t.includes(k));
+function isDirectUrl(url = "") {
+  return DIRECT_DOMAINS.some(d => url.includes(d));
 }
 
-// ── Extract the REAL retailer URL from redirect/tracking links ─────────────
-function extractDirectUrl(rawUrl = "", title = "") {
+// Follow redirects to get the real retailer URL
+async function resolveUrl(rawUrl = "") {
+  if (!rawUrl || isDirectUrl(rawUrl)) return rawUrl;
   try {
-    // Many deal sites use ?url= or ?u= or ?link= params
-    const u = new URL(rawUrl);
-    for (const param of ["url", "u", "link", "dest", "redirect", "target", "ref"]) {
-      const val = u.searchParams.get(param);
-      if (val && val.startsWith("http")) return decodeURIComponent(val);
-    }
-    // Slickdeals wraps links — extract from URL path
-    if (rawUrl.includes("slickdeals.net/click") || rawUrl.includes("slickdeals.net/e/")) {
-      // Can't resolve server-side, return as-is; we mark source
-      return rawUrl;
-    }
-    return rawUrl;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(rawUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SaveYourDollar)" },
+    });
+    clearTimeout(timer);
+    const final = res.url;
+    // Only keep if it landed on a known retailer
+    if (isDirectUrl(final)) return final;
+    // Try to extract from URL params as fallback
+    try {
+      const u = new URL(rawUrl);
+      for (const p of ["url","u","link","dest","ref","to","target"]) {
+        const v = u.searchParams.get(p);
+        if (v && v.startsWith("http") && isDirectUrl(v)) return decodeURIComponent(v);
+      }
+    } catch {}
+    return rawUrl; // give back original if we can't resolve
   } catch {
     return rawUrl;
   }
 }
 
-// ── Detect direct retailer URL from title keywords ─────────────────────────
-function guessRetailerUrl(title = "", existingUrl = "") {
+const SKIP_KEYWORDS = [
+  "book","kindle","audible","novel","paperback","hardcover",
+  "ebook","audiobook","manga","comic book","textbook",
+];
+function shouldSkip(title = "") {
   const t = title.toLowerCase();
-  // If URL already goes to a retailer directly, keep it
-  const direct = ["amazon.com","walmart.com","target.com","homedepot.com",
-    "lowes.com","bestbuy.com","kohls.com","gap.com","oldnavy.com",
-    "macys.com","costco.com","ebay.com","newegg.com"];
-  if (direct.some(d => existingUrl.includes(d))) return existingUrl;
-
-  // Otherwise try to build a search URL for the likely retailer
-  const encoded = encodeURIComponent(title.slice(0, 80));
-  if (t.includes("home depot") || t.includes("homedepot"))
-    return `https://www.homedepot.com/s/${encoded}`;
-  if (t.includes("menards"))
-    return `https://www.menards.com/main/search.html?search=${encoded}`;
-  if (t.includes("lowe"))
-    return `https://www.lowes.com/search?searchTerm=${encoded}`;
-  if (t.includes("walmart"))
-    return `https://www.walmart.com/search?q=${encoded}`;
-  if (t.includes("target"))
-    return `https://www.target.com/s?searchTerm=${encoded}`;
-  if (t.includes("amazon") || existingUrl.includes("camelcamelcamel"))
-    return `https://www.amazon.com/s?k=${encoded}&tag=saveyourdollar-20`;
-  if (t.includes("best buy") || t.includes("bestbuy"))
-    return `https://www.bestbuy.com/site/searchpage.jsp?st=${encoded}`;
-  if (t.includes("old navy"))
-    return `https://oldnavy.gap.com/browse/search.do?searchText=${encoded}`;
-  if (t.includes("gap"))
-    return `https://www.gap.com/browse/search.do?searchText=${encoded}`;
-  if (t.includes("kohl"))
-    return `https://www.kohls.com/search/results.jsp?keyword=${encoded}`;
-  if (t.includes("starbucks"))
-    return `https://www.starbucks.com/menu`;
-  if (t.includes("chick-fil") || t.includes("chickfila"))
-    return `https://www.chick-fil-a.com/menu`;
-  if (t.includes("mcdonald"))
-    return `https://www.mcdonalds.com/us/en-us/offers.html`;
-
-  return existingUrl; // fallback to original
+  return SKIP_KEYWORDS.some(k => t.includes(k));
 }
 
 function detectStore(title = "", url = "") {
@@ -141,13 +119,11 @@ function detectCategory(title = "") {
   return "general";
 }
 
-// Hot score: higher % off = higher score; free = top score
 function calcHotScore(title = "", discount = "") {
-  if (/\bfree\b/i.test(title)) return 100;
+  if (/\bfree\b/i.test(title))           return 100;
+  if (/penny|\$0\.01/.test(title))        return 95;
   const m = (discount || title).match(/(\d+)%/);
-  if (m) return parseInt(m[1]);
-  if (/penny|\.01|0\.01/.test(title)) return 95;
-  return 0;
+  return m ? parseInt(m[1]) : 0;
 }
 
 function extractPrice(title = "") {
@@ -160,47 +136,36 @@ function extractPrice(title = "") {
   };
 }
 
-// Best-effort image extraction from every possible RSS field
 function extractImage(item) {
-  // 1. Direct enclosure image
   if (item.enclosure?.url?.match(/\.(jpg|jpeg|png|webp|gif)/i)) return item.enclosure.url;
-  // 2. Media content
   if (item["media:content"]?.["$"]?.url) return item["media:content"]["$"].url;
-  if (item["media:content"]?.url) return item["media:content"].url;
-  // 3. Media thumbnail
+  if (item["media:content"]?.url)        return item["media:content"].url;
   if (item["media:thumbnail"]?.["$"]?.url) return item["media:thumbnail"]["$"].url;
-  // 4. First <img> in content
   const html = item["content:encoded"] || item.content || item.summary || "";
   const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   if (m && m[1].startsWith("http")) return m[1];
-  // 5. og:image or similar in content
-  const og = html.match(/property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
-  if (og) return og[1];
   return null;
 }
 
 async function saveDeal(deal) {
   if (!deal.url || !deal.title || deal.title.length < 5) return false;
-
   const { data: existing } = await supabase
     .from("deals").select("id").eq("url", deal.url).limit(1);
   if (existing?.length > 0) return false;
-
   const { error } = await supabase.from("deals").insert({
     title:       deal.title.slice(0, 250),
     description: (deal.description || "").slice(0, 600),
     url:         deal.url,
-    image_url:   deal.image_url   || null,
+    image_url:   deal.image_url  || null,
     source:      deal.source,
     category:    deal.category,
     store:       deal.store,
-    price:       deal.price       || null,
-    discount:    deal.discount    || null,
-    hot_score:   deal.hot_score   || 0,
-    posted_at:   deal.posted_at   || new Date().toISOString(),
+    price:       deal.price      || null,
+    discount:    deal.discount   || null,
+    hot_score:   deal.hot_score  || 0,
+    posted_at:   deal.posted_at  || new Date().toISOString(),
     is_approved: true,
   });
-
   if (error) { console.error("    DB error:", error.message); return false; }
   return true;
 }
@@ -216,12 +181,16 @@ async function fetchAndSave() {
 
       for (const item of result.items.slice(0, 30)) {
         const title = (item.title || "").trim();
-        if (shouldSkip(title)) continue; // skip books etc.
+        if (shouldSkip(title)) continue;
 
-        const rawUrl           = item.link || item.guid || "";
-        const cleanUrl         = extractDirectUrl(rawUrl, title);
-        const finalUrl         = guessRetailerUrl(title, cleanUrl);
+        const rawUrl = item.link || item.guid || "";
+
+        // ── Follow redirect to get direct retailer URL ──────────────────────
+        const finalUrl = await resolveUrl(rawUrl);
+
         const { price, discount } = extractPrice(title);
+        const store    = detectStore(title, finalUrl);
+        const category = detectCategory(title);
 
         const ok = await saveDeal({
           title,
@@ -229,8 +198,8 @@ async function fetchAndSave() {
           description: item.contentSnippet || "",
           image_url:   extractImage(item),
           source:      feed.source,
-          category:    detectCategory(title),
-          store:       detectStore(title, finalUrl),
+          category,
+          store,
           price, discount,
           hot_score:   calcHotScore(title, discount),
           posted_at:   item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
@@ -247,5 +216,4 @@ async function fetchAndSave() {
 }
 
 fetchAndSave();
-// Run once per day at 6 AM
-cron.schedule("0 6 * * *", fetchAndSave);
+cron.schedule("0 6 * * *", fetchAndSave); // once daily at 6 AM
